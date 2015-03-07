@@ -1,0 +1,146 @@
+# XBMC Media Center language file
+# Addon Name: Kody Movie Copier
+# Addon id: script.moviecopy
+msgid ""
+msgstr ""
+"Project-Id-Version: XBMC-Addons\n"
+"Report-Msgid-Bugs-To: alanwww1@xbmc.org\n"
+"POT-Creation-Date: 2014-04-16 15:38+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+
+msgctxt "Addon Summary"
+msgid "Kody Movie Copier"
+msgstr "Kody Movie Copier"
+
+msgctxt "Addon Description"
+msgid "This addon smartly copies downloaded movies to your movie library"
+msgstr "Deze addon kopiëert gedownloade films slim naar je films bibliotheek"
+
+
+msgctxt "#50000"
+msgid "Please Select Source Folder"
+msgstr "Selecteer de Bron Map aub."
+
+msgctxt "#50001"
+msgid "Select Destination Location"
+msgstr "Selecteer de Doel Lokatie"
+
+msgctxt "#50002"
+msgid "Unable to copy folder. %s"
+msgstr "Kan de map niet kopiëren. %s"
+
+msgctxt "#50003"
+msgid "Unable to copy files. %s"
+msgstr "Kan de bestanden niet kopiëren. %s"
+
+msgctxt "#50004"
+msgid "Unable to remove folder. %s"
+msgstr "Kan de map niet verwijderen. %s"
+
+msgctxt "#50005"
+msgid "Kodi Movie Copy [%s]"
+msgstr "Kodi Movie Copy [%s]"
+
+msgctxt "#50006"
+msgid "Time: %s - ETA: %s - Rate: %s MB/s [%s%%]"
+msgstr "Tijd: %s - Klaar: %s - Snelheid: %s MB/s [%s%%]"
+
+msgctxt "#50007"
+msgid "Please Select Movie File to Copy"
+msgstr "Selekteer aub. het Filmbestand om te Kopiëren"
+
+msgctxt "#50008"
+msgid "More Movie Files Detected, Select Another One or Cancel"
+msgstr "Meer Filmbestanden gedetecteerd, Selecteer er nog een of Annuleer"
+
+msgctxt "#50009"
+msgid "No Source Folder Selected, quit ..."
+msgstr "Geen Bron Map Geselecteerd, sluit af ..."
+
+msgctxt "#50010"
+msgid "No Video Files to Copy, quit ..."
+msgstr "Geen Video Bestanden om te Kopieëren, sluit af ..."
+
+msgctxt "#50011"
+msgid "No Destination Folder Selected, quit ..."
+msgstr "Geen Doel Map Geselecteerd, sluit af ..."
+
+msgctxt "#50012"
+msgid "Copy Process Canceled by User ..."
+msgstr "Kopiëer proces Geannuleerd door de Gebruiker ..."
+
+msgctxt "#50013"
+msgid "Copy Process Canceled by Timeout ..."
+msgstr "Kopiëer proces Geannuleerd door een Timeout ..."
+
+msgctxt "#50100"
+msgid "Source"
+msgstr "Bron"
+
+msgctxt "#50101"
+msgid "Destination"
+msgstr "Doel"
+
+msgctxt "#50102"
+msgid "General"
+msgstr "Algemeen"
+
+msgctxt "#50103"
+msgid "Select Source Folder"
+msgstr "Selecteer Bron Map"
+
+msgctxt "#50104"
+msgid "Select Destination Folder 1"
+msgstr "Selecteer Doel Map 1"
+
+msgctxt "#50105"
+msgid "Select Destination Folder 2"
+msgstr "Selecteer Doel Map 2"
+
+msgctxt "#50106"
+msgid "Select Destination Folder 3"
+msgstr "Selecteer Doel Map 3"
+
+msgctxt "#50107"
+msgid "Select Destination Folder 4"
+msgstr "Selecteer Doel Map 4"
+
+msgctxt "#50108"
+msgid "Select Destination Folder 5"
+msgstr "Selecteer Doel Map 5"
+
+msgctxt "#50109"
+msgid "Copy Entire Folder"
+msgstr "Kopiëer Komplete Map"
+
+msgctxt "#50110"
+msgid "Select which Video Files to Copy"
+msgstr "Selecteer welke Video Bestanden je wil Kopiëren"
+
+msgctxt "#50111"
+msgid "Copy Subtitle Files"
+msgstr "Kopiëer Ondertitel Bestanden"
+
+msgctxt "#50112"
+msgid "Progress Bar on Background"
+msgstr "Voortgang op de Achtergrond"
+
+msgctxt "#50113"
+msgid "Move Files Instead of Copy"
+msgstr "Verplaats bestand in plaats van Kopiëren"
+
+msgctxt "#50114"
+msgid "Remove Source Folder after Copying"
+msgstr "Verwijder Bron Map na Kopiëren"
+
+msgctxt "#50115"
+msgid "Minimum Average Timeout Datarate [MB/s] (0=no timeout)"
+msgstr "Minimum Gemiddelde Timeout Snelheid [MB/s] (0=geen timeout)"
+

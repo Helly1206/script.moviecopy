@@ -1,0 +1,8 @@
+CHANGELOG
+
+0.9.1: (2015-03-07)
+- Added language files for Englisch and Dutch
+
+0.9.0:
+- Initial Release
+- (Commandline not tested, without commandline 
