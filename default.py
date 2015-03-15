@@ -16,8 +16,8 @@ __addonid__    = __addon__.getAddonInfo('id')
 __cwd__        = __addon__.getAddonInfo('path').decode("utf-8")
 __version__    = __addon__.getAddonInfo('version')
 __language__   = __addon__.getLocalizedString
-__datapath__ = xbmc.translatePath(os.path.join('special://temp/', __addonname__))
-__logfile__ = os.path.join(__datapath__, __addonname__ + '.log')
+__datapath__ = xbmc.translatePath(os.path.join('special://temp/', __addonid__))
+__logfile__ = os.path.join(__datapath__, __addonid__ + '.log')
 __LS__ = __addon__.getLocalizedString
 
 # Globals needed for writeLog()
@@ -286,6 +286,7 @@ class CopyProgressBar(object):
     def Close(self):
         self.pb.close()
         if self.log:
+            self.f.write('Finished\n')
             self.f.close()
 
 # FileInfo
