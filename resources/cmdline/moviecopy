@@ -1,0 +1,452 @@
+#!/usr/bin/python
+
+#imports
+import os, subprocess
+import json
+from xml.dom import minidom
+import time
+from itertools import chain
+
+import sys
+if sys.version_info.major == 3:
+    from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
+    from urllib.parse import urlencode
+else:
+    from urllib2 import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
+    from urllib import urlencode
+
+#defines
+JSONGETPATH = '{"jsonrpc": "2.0", "method": "Addons.GetAddonDetails", "params": { "addonid": "script.moviecopy","properties": ["path"]}, "id": 1 }'
+JSONEXECADDON = '{"jsonrpc": "2.0", "method": "Addons.ExecuteAddon", "params": { "wait": false, "addonid": "script.moviecopy","params": %s}, "id": 1 }'
+
+DEFAULTURL = 'http://127.0.0.1:8085/jsonrpc'
+
+STATUS_WAITINGSTART = 0
+STATUS_COPYING      = 1
+STATUS_FINISHED     = 2
+WAIT_FOR_START      = 10 #seconds
+
+#globals
+settings = []
+
+#########################################################
+# Class : ZGUI                                          #
+#########################################################
+### This is an embed of related funcitons in the PyZenity library 
+class ZGUI(object):
+    def __init__(self):
+        self.zen_exec = 'zenity'
+ 
+    def run_zenity(self,type, *args):
+        return subprocess.Popen([self.zen_exec, type] + list(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+    def GetInstalled(self):
+        try:
+            p = self.run_zenity('--version', *[])
+            if p.wait() == 0:
+                out = p.stdout.read().strip().replace('.','')
+            int(out)
+            retval = int(out) > 0
+        except:
+            retval = False
+        return retval
+
+    def GetFilename(self, multiple=False, selected=None, sep='|', title=None):
+        args = []
+        if multiple:
+            args.append('--multiple')
+        if selected:
+            if not os.path.lexists(selected):
+                raise ValueError("File %s does not exist!" % selected)
+            args.append('--filename=%s' % selected)
+        if sep != '|':
+            args.append('--separator=%s' % sep)
+        if title:
+            args.append('--title=%s' % title)
+
+        p = self.run_zenity('--file-selection', *args)
+
+        if p.wait() == 0:
+            return p.stdout.read()[:-1].split('|')
+
+
+    def GetDirectory(self, multiple=False, selected=None, sep=None, title=None):
+        args = ['--directory']
+        if multiple:
+            args.append('--multiple')
+        if selected:
+            if not os.path.lexists(selected):
+                raise ValueError("File %s does not exist!" % selected)
+            args.append('--filename=%s' % selected)
+        if sep:
+            args.append('--separator=%s' % sep)
+        if title:
+            args.append('--title=%s' % title)
+    
+        p = self.run_zenity('--file-selection', *args)
+
+        if p.wait() == 0:
+            return p.stdout.read().strip().split('|')
+
+    def List(self, column_names, title=None, boolstyle=None, editable=False, 
+             select_col=None, sep='|', data=[]):
+        args = []
+        for column in column_names:
+            args.append('--column=%s' % column)
+    
+        if title:
+            args.append('--title=%s' % title)
+        if boolstyle:
+            if not (boolstyle == 'checklist' or boolstyle == 'radiolist'):
+                raise ValueError('"%s" is not a proper boolean column style.'
+                                 % boolstyle)
+            args.append('--' + boolstyle)
+        if editable:
+            args.append('--editable')
+        if select_col:
+            args.append('--print-column=%s' % select_col)
+        if sep != '|':
+            args.append('--separator=%s' % sep)
+    
+        for datum in data:
+            args.append(str(datum))
+    
+        p =self.run_zenity('--list', *args)
+
+        if p.wait() == 0:
+            return p.stdout.read().strip().split(sep)
+
+    def InfoMessage(self, text):
+        self.run_zenity('--info', '--text=%s' % text).wait()
+
+    def ErrorMessage(self, text):
+        self.run_zenity('--error', '--text=%s' % text).wait()
+
+    def Question(self, text):
+        return self.run_zenity('--question', '--text=%s' % text).wait() == 0
+
+    def Progress(self, title=None, text=None, percentage=0, auto_close=False, auto_kill=False, pulsate=False):
+        args = []
+        if title:
+            args.append('--title=%s' % title)
+        if text:
+            args.append('--text=%s' % text)
+        if percentage:
+            args.append('--percentage=%s' % percentage)
+        if auto_close:
+            args.append('--auto-close=%s' % auto_close)
+        if auto_kill:
+            args.append('--auto-kill=%s' % auto_close)
+        if pulsate:
+            args.append('--pulsate=%s' % pulsate)
+
+        p = self.run_zenity('--progress', *args)
+
+        def update(percent, message=''):
+            try:
+                if type(percent) == float:
+                    percent = int(percent * 100)
+                p.stdin.write(str(percent) + '\n')
+                if message:
+                    p.stdin.write('# %s\n' % message)
+                retval = True
+            except:
+                retval = False
+            return retval
+
+        return update
+
+    ## Placed in the same class, but not part of zenity anymore ...
+    def SelectSourceFolder(self, defaultPath=None):
+        SourceFolder=self.GetDirectory(selected=defaultPath, title = "Please Select Source Folder")
+        if SourceFolder:
+            SourceFolder = SourceFolder[0]
+        return SourceFolder
+
+    def GetFiles(self, SourceFolder):
+        vfiles = []
+        if not SourceFolder[-1:] == "/":
+            SourceFolder = "%s/" % SourceFolder
+        if os.path.isdir(SourceFolder):
+	    vfiles = self.GetFilename(multiple=True, selected=SourceFolder, title="Please Select File(s) to Copy")
+        return vfiles
+
+    def LookupDestination(self):
+        nfolders=0
+        dest = []
+        DestinationFolder = ""
+        if GetSetting("dest_folder1"): 
+            nfolders += 1
+            dest.append(GetSetting("dest_folder1"))
+        if GetSetting("dest_folder2"): 
+            nfolders += 1
+            dest.append(GetSetting("dest_folder2"))
+        if GetSetting("dest_folder3"):
+            nfolders += 1
+            dest.append(GetSetting("dest_folder3"))
+        if GetSetting("dest_folder4"):
+            nfolders += 1
+            dest.append(GetSetting("dest_folder4"))
+        if GetSetting("dest_folder5"): 
+            nfolders += 1
+            dest.append(GetSetting("dest_folder5"))
+
+        if nfolders == 1:
+            DestinationFolder = dest[0]
+        elif nfolders > 1:
+            DestinationFolder = self.List(["Options:"], title="Select Destination Location", data=dest)
+            if DestinationFolder:
+                DestinationFolder = DestinationFolder[0]
+
+        return nfolders, DestinationFolder
+
+#########################################################
+# Functions                                             #
+#########################################################
+### 
+def curl(url, params=None, auth=None, req_type="GET", data=None, headers=None):
+    post_req = ["POST", "PUT"]
+    get_req = ["GET", "DELETE"]
+
+    if params is not None:
+        url += "?" + urlencode(params)
+
+    if req_type not in post_req + get_req:
+        raise IOError("Wrong request type \"%s\" passed" % req_type)
+
+    _headers = {}
+    handler_chain = []
+
+    if auth is not None:
+        manager = HTTPPasswordMgrWithDefaultRealm()
+        manager.add_password(None, url, auth["user"], auth["pass"])
+        handler_chain.append(HTTPBasicAuthHandler(manager))
+
+    if req_type in post_req and data is not None:
+        _headers["Content-Length"] = len(data)
+
+    if headers is not None:
+        _headers.update(headers)
+
+    director = build_opener(*handler_chain)
+
+    if req_type in post_req:
+        if sys.version_info.major == 3:
+            _data = bytes(data, encoding='utf8')
+        else:
+            _data = bytes(data)
+
+        req = Request(url, headers=_headers, data=_data)
+    else:
+        req = Request(url, headers=_headers)
+
+    req.get_method = lambda: req_type
+    result = director.open(req)
+
+    return result.read()
+
+def JsonRPC(url, udata):
+    return curl(url, req_type="POST", data=udata, headers={"Content-Type":"application/json"})
+
+def GetSetting(search):
+    for a in settings:
+        if (a[0].lower() == search.lower()):
+            return a[1]
+
+    return None
+
+def GetSettingsFromKodi(path):
+    if not os.path.isfile(path):
+        PyZenity.ErrorMessage("Settingsfile does not exist: %s" % path)
+        exit()
+    
+    global settings
+    settings = []
+    try:
+        __xml = minidom.parse(path)
+        nodes = __xml.getElementsByTagName("settings")
+        if nodes:
+            for node in nodes:
+                asettings=node.getElementsByTagName('setting')
+                for a in asettings:
+                    settings.append([a.getAttribute("id"),a.getAttribute("value")])
+    except Exception, e:
+        PyZenity.ErrorMessage("Error reading from settingsfile: %s" % path)
+        exit()
+    return
+
+def getProcessPID(process):
+    _syscmd = subprocess.Popen(['pidof', process], stdout=subprocess.PIPE)
+    PID = _syscmd.stdout.read().strip()
+    return PID if PID > 0 else False
+
+def ReadProgressFromFile(lfile):
+    Testing = False
+    last = None
+    status = STATUS_WAITINGSTART
+    data = []
+    if os.path.exists(lfile):
+        statinfo = os.stat(lfile)
+        filetime = int(statinfo.st_mtime)
+        now = int(time.time())
+        
+        if (now-filetime >= 0 and now-filetime < 5) or Testing: # Check for valid logfile
+            with open(lfile, "rb") as f:
+                try:
+                    f.seek(-2, 2)                # Jump to the second last byte.
+                    while f.read(1) != "\n":     # Until EOL is found...
+                        if f.tell() == 1:
+                            f.seek(-1, 1)
+                            break
+                        f.seek(-2, 1)            # ...jump back the read byte plus one more.
+                    last = f.readline().strip()  # Read last line.
+                except:
+                    last = None
+
+    if last:
+        if last.lower() == "finished":
+            status = STATUS_FINISHED
+        else:
+            status = STATUS_COPYING
+            try:
+                data = last.split(',')
+            except Exception, e:
+                print "Incorrect log line"
+    
+    return status, data
+
+#########################################################
+# Main                                                  #
+#########################################################
+### 
+Testing = False
+print "Moviecopy OS Access GUI V1.0"
+
+GUI = ZGUI()
+
+if not GUI.GetInstalled():
+    print "Moviecopy requires zenity to be installed"
+    print "For debian/ ubuntu: sudo apt-get install zenity"
+    print "For windows: see http://placella.com/software/zenity/"
+    print "For other distro's: see http://ftp.gnome.org/pub/gnome/sources/zenity/"
+    del GUI
+    exit()
+
+if not getProcessPID('kodi.bin'):
+    GUI.ErrorMessage("Kodi not running, copying movies not possible")
+    del GUI
+    exit()
+
+if len(sys.argv) > 1:
+    url = sys.argv[1].lower()
+else:
+    url = DEFAULTURL
+
+#get path
+path = json.loads(JsonRPC(url,JSONGETPATH))['result']['addon']['path']
+base,ext = os.path.split(path)
+basepath,ext2 = os.path.split(base)
+base = os.path.join(basepath,"userdata/addon_data")
+settingspath = os.path.join(os.path.join(base,ext),"settings.xml")
+#get settings
+GetSettingsFromKodi(settingspath)
+
+#select source folder
+SourceFolder = GUI.SelectSourceFolder(GetSetting("src_folder"))
+if not SourceFolder:
+    print "No Source Folder Selected, quit ..."
+    GUI.ErrorMessage("No Source Folder Selected, quit ...")
+    del GUI
+    exit()
+
+#select files
+ManualFiles = False
+if not GetSetting("entire_folder").lower() == "true" or Testing:
+    if GetSetting("video_files").lower() == "select" or Testing:
+        ManualFiles = True
+        filesa = GUI.GetFiles(SourceFolder)
+        if not filesa:
+            print "No Video Files to Copy, quit ..."
+            GUI.ErrorMessage("No Video Files to Copy, quit ...")
+            del GUI
+            exit()
+        Files = []
+        for f in filesa:
+            Files.append("\'%s\'"%f)
+        Files = "|".join(Files)
+        Files = "\"" + Files + "\""
+
+#select destination
+Folders, DestinationFolder=GUI.LookupDestination() 
+if (Folders > 1) or Testing:
+    ManualDest = True
+    if not DestinationFolder:
+        print "No Destination Folder Selected, quit ..."
+        GUI.ErrorMessage("No Destination Folder Selected, quit ...")
+        del GUI
+        exit()
+    DestinationFolder = "\"%s\""%DestinationFolder
+else:
+    ManualDest = False
+
+# Build arguments
+SourceFolder = "\"%s\""%SourceFolder
+Arguments = ",".join(["[\"-l\"","\"-s\"",SourceFolder])
+if ManualFiles:
+    Arguments = ",".join([Arguments,"\"-f\"",Files])
+if ManualDest:
+    Arguments = ",".join([Arguments,"\"-d\"",DestinationFolder])
+Arguments += "]"
+
+base = os.path.join(basepath,"temp")
+logpath = os.path.join(os.path.join(base,ext),ext+".log")
+
+#json call Moviecopy
+JsonRPC(url,JSONEXECADDON%Arguments)
+print "MovieCopy Started ..."
+
+#print progress
+percentage=0
+PBRun = True
+CopyRun = True
+StartTimeout = WAIT_FOR_START
+Message="Time: %s - ETA: %s - Rate: %s MB/s [%s%%]"
+PBCallback = GUI.Progress(title="Copying Files", text=Message % ("0s","Inf","0.0","0"), percentage=0, auto_close=True)
+while (percentage<100) and PBRun and CopyRun:
+    status, data = ReadProgressFromFile(logpath)
+    if status == STATUS_WAITINGSTART:
+        if StartTimeout < 1:
+            CopyRun = False
+        StartTimeout -= 1
+        time.sleep(1)
+    elif status == STATUS_COPYING:
+        StartTimeout = WAIT_FOR_START
+        percentage=int(data[3].strip())
+        PBRun=PBCallback(percentage, Message % (data[0].strip(),data[1].strip(),data[2].strip(),data[3].strip()))
+        time.sleep(1)
+    else: # status == STATUS_FINISHED:
+        CopyRun = False
+
+PBCallback(100,"") # close the progress bar
+if StartTimeout < 1:
+    print "Timeout waiting for copy to start, quit ..."
+    GUI.ErrorMessage("Timeout waiting for copy to start, quit ...")
+    del GUI
+    exit()
+
+if not PBRun:
+    print "MovieCopy OS Access canceled, but actual copy process will continue"
+    GUI.InfoMessage("MovieCopy OS Access canceled, but actual copy process will continue")
+    del GUI
+    exit()
+#    if GUI.Question("Progress canceled, cancel copy process too?"):
+#        print "Copy cancel not implemented yet ..."
+#        GUI.ErrorMessage("Copy cancel not implemented yet ...")
+#        del GUI
+#        exit()
+#    else:
+#	print "Copy process will continue"
+
+print "MovieCopy Ready ..."
+print "Normal exit"
+del GUI

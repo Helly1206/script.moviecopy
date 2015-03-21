@@ -271,6 +271,7 @@ class CopyProgressBar(object):
             writeDebug(self.message % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
             if self.log:
                 self.f.write('%s, %s, %s, %s\n' % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
+                self.f.flush()
         return retval
 
     def Wait(self):
@@ -466,7 +467,10 @@ if len(sys.argv) > 1:
                 __manual_source__ = False
                 cmd = True
             elif sys.argv[i-1].lower() == "-f":
-                Files = sys.argv[i].split('|')
+                Fl = sys.argv[i].split('|')
+                Files = []
+                for f in Fl:
+                    Files.append(f.strip("\'\""))
                 __manual_files__ = False
                 cmd = True
             elif sys.argv[i-1].lower() == "-d":
@@ -476,6 +480,18 @@ if len(sys.argv) > 1:
             else:
                 writeLog("Error in options: %s" % sys.argv[i])
         i += 1
+
+#debug
+if __log_progress__:
+    writeDebug("Progress logging switched on (-l)")
+if not __manual_source__:
+    writeDebug("Manual source (-s) %s"%SourceFolder)
+if not __manual_files__:
+    writeDebug("Manual files (-f)")
+    for f in Files:
+        writeDebug("                  %s"%f)
+if not __manual_destination__:
+    writeDebug("Manual destination (-d) %s"%DestinationFolder)
 
 Size = 0
 if __manual_source__:
