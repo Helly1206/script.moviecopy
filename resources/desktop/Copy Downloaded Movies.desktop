@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Type=Application
+Name=Copy Downloaded Movies
+Name[en_US]=Copy Downloaded Movies
+Icon=/home/kodi/.kodi/addons/script.moviecopy/icon.png
+Exec=/home/kodi/.kodi/addons/script.moviecopy/resources/desktop/moviecopy
+Comment[en_US]=
+Path=/home/kodi/.kodi/addons/script.moviecopy/resources/desktop/
+GenericName=Kodie Movie Copier

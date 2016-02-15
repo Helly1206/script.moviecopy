@@ -1,0 +1,529 @@
+#!/usr/bin/python
+
+#imports
+import os, subprocess
+import json
+from xml.dom import minidom
+import time
+from itertools import chain
+import getpass
+import gettext
+import sys
+import socket
+if sys.version_info.major == 3:
+    from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
+    from urllib.parse import urlencode
+else:
+    from urllib2 import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
+    from urllib import urlencode
+    
+try:
+    import wx
+except ImportError:
+    print "wxpython not installed, wxpython is required to use this GUI"
+    print "Install wxpython"
+    print "See: http://www.wxpython.org/download.php"
+    exit()
+
+#defines
+JSONGETPATH = '{"jsonrpc": "2.0", "method": "Addons.GetAddonDetails", "params": { "addonid": "script.moviecopy","properties": ["path"]}, "id": 1 }'
+JSONEXECADDON = '{"jsonrpc": "2.0", "method": "Addons.ExecuteAddon", "params": { "wait": false, "addonid": "script.moviecopy","params": %s}, "id": 1 }'
+
+STATUS_WAITINGSTART = 0
+STATUS_COPYING      = 1
+STATUS_FINISHED     = 2
+WAIT_FOR_START      = 10 #seconds
+
+SOCKET_TIMEOUT      = 20
+
+#globals
+settings = []
+
+#########################################################
+# Class : WXGUI                                         #
+#########################################################
+### This class contains the gui functions from wx, used for this script
+class WXGUI(object):
+    def GetFilename(self, multiple=False, selected=None, title=None):
+        Style = wx.FD_OPEN | wx.FD_FILE_MUST_EXIST
+        if multiple:
+            Style = Style | wx.FD_MULTIPLE
+        dlg = wx.FileDialog(None, title, selected, "","All files (*.*)|*.*", Style)
+        if (dlg.ShowModal() == wx.ID_OK):
+            result = dlg.GetFilenames()
+        else:
+            result = None
+        dlg.Destroy()
+        return result
+
+    def GetDirectory(self, selected=None, title=None):
+        if not selected[-1:] == "/":
+            selected = "%s/" % selected
+        dlg = wx.DirDialog(None, title, selected, wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST)
+        if (dlg.ShowModal() == wx.ID_OK):
+            result = dlg.GetPath()
+            if result != None:
+                if not result[-1:] == "/":
+                    result = "%s/" % result
+        else:
+            result = None
+        dlg.Destroy()
+        if result == selected:
+            result = None
+        return result
+
+    def List(self, msg, title=None, data=[]):
+        dlg = wx.SingleChoiceDialog(None, msg, title, data, wx.CHOICEDLG_STYLE)
+        if (dlg.ShowModal() == wx.ID_OK):
+            result = dlg.GetStringSelection()
+        else:
+            result = None
+        dlg.Destroy() 
+        return result    
+
+    def InfoMessage(self, text):
+        dlg = wx.MessageDialog(None, 
+                text,
+                "MovieCopy Info", wx.OK|wx.ICON_INFORMATION)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+
+    def ErrorMessage(self, text):
+        dlg = wx.MessageDialog(None, 
+                text,
+                "MovieCopy Error", wx.OK|wx.ICON_ERROR)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+
+    def Progress(self, title=None, text=None, percentage=0, auto_close=False, auto_kill=False, pulsate=False):
+        dlg = wx.ProgressDialog(title, text, maximum = 100, parent=None, style = wx.PD_CAN_ABORT | wx.PD_APP_MODAL)
+
+        def update(percent, message='', close=False):
+            if close == True:
+                dlg.Destroy()
+                retval = True
+            else:
+                try:
+                    if type(percent) == float:
+                        percent = int(percent * 100)
+                    if message:
+                        dlg.Update(percent,message)
+                    else:
+                        dlg.Update(percent)
+                    retval = True
+                except:
+                    retval = False
+            return retval
+        
+        return update
+        
+    ## Placed in the same class, but not part of wx anymore ...
+    def SelectSourceFolder(self, defaultPath=None):
+        SourceFolder=self.GetDirectory(selected=defaultPath, title = "Please Select Source Folder")
+        return SourceFolder
+
+    def GetFiles(self, SourceFolder):
+        vfiles = []
+        if not SourceFolder[-1:] == "/":
+            SourceFolder = "%s/" % SourceFolder
+        if os.path.isdir(SourceFolder):
+            vfiles = self.GetFilename(multiple=True, selected=SourceFolder, title="Please Select File(s) to Copy")
+        return vfiles
+
+    def LookupDestination(self):
+        nfolders=0
+        dest = []
+        DestinationFolder = ""
+        if GetSetting("dest_folder1"): 
+            nfolders += 1
+            dest.append(GetSetting("dest_folder1"))
+        if GetSetting("dest_folder2"): 
+            nfolders += 1
+            dest.append(GetSetting("dest_folder2"))
+        if GetSetting("dest_folder3"):
+            nfolders += 1
+            dest.append(GetSetting("dest_folder3"))
+        if GetSetting("dest_folder4"):
+            nfolders += 1
+            dest.append(GetSetting("dest_folder4"))
+        if GetSetting("dest_folder5"): 
+            nfolders += 1
+            dest.append(GetSetting("dest_folder5"))
+
+        if nfolders == 1:
+            DestinationFolder = dest[0]
+        elif nfolders > 1:
+            DestinationFolder = self.List(title="Destination Location", msg="Select Destination Location:", data=dest)
+
+        return nfolders, DestinationFolder
+
+#########################################################
+# Functions                                             #
+#########################################################
+### 
+def curl(url, params=None, auth=None, req_type="GET", data=None, headers=None):
+    post_req = ["POST", "PUT"]
+    get_req = ["GET", "DELETE"]
+
+    if params is not None:
+        url += "?" + urlencode(params)
+
+    if req_type not in post_req + get_req:
+        raise IOError("Wrong request type \"%s\" passed" % req_type)
+
+    _headers = {}
+    handler_chain = []
+
+    if auth is not None:
+        manager = HTTPPasswordMgrWithDefaultRealm()
+        manager.add_password(None, url, auth["user"], auth["pass"])
+        handler_chain.append(HTTPBasicAuthHandler(manager))
+
+    if req_type in post_req and data is not None:
+        _headers["Content-Length"] = len(data)
+
+    if headers is not None:
+        _headers.update(headers)
+
+    director = build_opener(*handler_chain)
+
+    if req_type in post_req:
+        if sys.version_info.major == 3:
+            _data = bytes(data, encoding='utf8')
+        else:
+            _data = bytes(data)
+
+        req = Request(url, headers=_headers, data=_data)
+    else:
+        req = Request(url, headers=_headers)
+
+    req.get_method = lambda: req_type
+    result = director.open(req)
+
+    return result.read()
+
+def JsonRPC(url, udata):
+    return curl(url, req_type="POST", data=udata, headers={"Content-Type":"application/json"})
+
+def GetSetting(search):
+    for a in settings:
+        if (a[0].lower() == search.lower()):
+            return a[1]
+
+    return None
+
+def GetSettingsFromKodi(path):
+    if not os.path.isfile(path):
+        print "Settingsfile does not exist: %s" % (path)
+        dlg = wx.MessageDialog(None, 
+                "Settingsfile does not exist: %s" % (path),
+                "Settings error", wx.OK|wx.ICON_ERROR)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+        exit()
+    
+    global settings
+    settings = []
+    try:
+        __xml = minidom.parse(path)
+        nodes = __xml.getElementsByTagName("settings")
+        if nodes:
+            for node in nodes:
+                asettings=node.getElementsByTagName('setting')
+                for a in asettings:
+                    settings.append([a.getAttribute("id"),a.getAttribute("value")])
+    except Exception, e:
+        print "Error reading from settingsfile: %s" % (path)
+        dlg = wx.MessageDialog(None, 
+                "Settingsfile does not exist: %s" % (path),
+                "Settings error", wx.OK|wx.ICON_ERROR)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+        exit()
+    return
+
+def GetDataFolder():
+    pf = sys.platform.lower()
+    usr = getpass.getuser()
+    udf = ""
+    if pf == 'linux' or pf == 'linux2':
+        udf = '/home/%s/.kodi/'%usr
+    elif pf == 'windows':
+        udf = 'C:\\Users\\%s\\AppData\\Roaming\\Kodi\\'%usr
+    elif pf == 'android':
+        udf = '/sdcard/Android/data/org.xbmc.kodi/files/.kodi/'
+    elif pf == 'ios':
+        udf = '/private/var/mobile/Library/Preferences/Kodi/'
+    elif pf == 'darwin':
+        udf = '/Users/%s/Library/Application Support/Kodi/'%usr
+    return udf
+    
+def GetUrlFromKodi(path):
+    if not os.path.isfile(path):
+        print "Settingsfile does not exist: %s" % (path)
+        dlg = wx.MessageDialog(None, 
+                "Settingsfile does not exist: %s" % (path),
+                "Settings error", wx.OK|wx.ICON_ERROR)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+        exit()
+    
+    global settings
+    settings = []
+    try:
+        __xml = minidom.parse(path)
+        nodes = __xml.getElementsByTagName("settings")
+        if nodes:
+            for node in nodes:
+                asettings=node.getElementsByTagName('services')
+                for a in asettings:
+                    wsp=node.getElementsByTagName('webserverport')
+                    if (len(wsp[0].childNodes) > 0):
+                        port=wsp[0].childNodes[0].data
+                    else:
+                        port=8080
+    except Exception, e:
+        print "Error reading from settingsfile: %s" % (path)
+        dlg = wx.MessageDialog(None, 
+                "Settingsfile does not exist: %s" % (path),
+                "Settings error", wx.OK|wx.ICON_ERROR)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+        exit()
+    return 'http://127.0.0.1:%s/jsonrpc'%port
+
+def getProcessPID(process):
+    _syscmd = subprocess.Popen(['pidof', process], stdout=subprocess.PIPE)
+    PID = _syscmd.stdout.read().strip()
+    return PID if PID > 0 else False
+
+def GetFileName(filename, slash=True):
+    if filename[-1:] == "/":
+        head, tail = os.path.split(filename)
+        head, tail = os.path.split(head)
+        if slash:
+            tail = "%s/" % tail
+    else: 
+        head, tail = os.path.split(filename)
+    return tail
+
+class SocketChannel(object):
+    def __init__(self, port):
+        self.sock = None
+        self.ss = None
+        self.port = port
+        self.Open()
+        self.Counter=0
+        
+    def Open(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(('localhost', self.port))
+        self.sock.listen(5) # become a server socket, maximum 5 connections
+        self.sock.setblocking(False)
+    
+    def TryConn(self):
+        Success = False
+        if self.ss != None:
+            Success = True
+        else:
+            try:
+                self.ss,sockname = self.sock.accept()
+                self.ss.settimeout(1)
+                self.Counter = 0
+                print("[Remote] Socket connection established to: %s"%str(sockname))
+                Success = True
+            except socket.error, e:
+                #print("[Remote] Error socket connection: %s"%e)
+                if self.ss != None:
+                    self.ss.close()
+                    self.ss = None
+                Success = False
+        return Success
+    
+    def Receive(self):
+        msg = None
+        try: 
+            msg = self.ss.recv(100)
+        except socket.timeout:
+            msg = None
+        except socket.error, e:
+            msg = None
+            print("[Remote] Error socket connection: %s"%e)
+            if self.ss != None:
+                self.ss.close()
+                self.ss = None
+        else:
+            if len(msg) == 0:
+                msg = None
+                if (self.Counter < SOCKET_TIMEOUT):
+                    self.Counter += 1
+                else:
+                    if self.ss != None:
+                        self.ss.close()
+                        self.ss = None
+                    print("[Remote] Socket connection closed by timeout")
+            else:
+                self.Counter = 0
+        return msg
+        
+    def ReadProgress(self):
+        Testing = False
+        status = STATUS_WAITINGSTART
+        data = []    
+        line = None
+        cnt = 0
+        while (line == None) and (cnt<5):
+            if self.TryConn():
+                line = self.Receive()
+                cnt += 1
+            else:
+                cnt = 10
+            
+        if line:
+            if line.lower() == "finished":
+                status = STATUS_FINISHED
+            else:
+                status = STATUS_COPYING
+                try:
+                    data = line.split(',')
+                except Exception, e:
+                    print "Incorrect log line"
+                    
+        return status, data
+    
+    def Close(self):
+        self.sock.close()
+        self.sock = None
+
+#########################################################
+# Main                                                  #
+#########################################################
+### 
+Testing = False
+print "Moviecopy OS Access GUI V2.0"
+
+gettext.install("MovieCopyGui") # replace with the appropriate catalog name
+
+app = wx.PySimpleApp(0)
+wx.InitAllImageHandlers()
+
+GUI = WXGUI()
+
+if not getProcessPID('kodi.bin'):
+    print "Kodi not running, copying movies not possible"
+    GUI.ErrorMessage("Kodi not running, copying movies not possible")
+    del GUI
+    exit()
+
+#get url
+loc = os.path.join(os.path.join(GetDataFolder(),"userdata"),"guisettings.xml")
+url = GetUrlFromKodi(loc)
+
+#get path
+path = json.loads(JsonRPC(url,JSONGETPATH))['result']['addon']['path']
+base,ext = os.path.split(path)
+basepath,ext2 = os.path.split(base)
+base = os.path.join(basepath,"userdata/addon_data")
+settingspath = os.path.join(os.path.join(base,ext),"settings.xml")
+#get settings
+GetSettingsFromKodi(settingspath)
+
+#select source folder
+SourceFolder = GUI.SelectSourceFolder(GetSetting("src_folder"))
+if not SourceFolder:
+    print "No Source Folder Selected, quit ..."
+    GUI.ErrorMessage("No Source Folder Selected, quit ...")
+    del GUI
+    exit()
+
+#select files
+ManualFiles = False
+if not GetSetting("entire_folder").lower() == "true" or Testing:
+    if GetSetting("video_files").lower() == "select" or Testing:
+        ManualFiles = True
+        filesa = GUI.GetFiles(SourceFolder)
+        if not filesa:
+            print "No Video Files to Copy, quit ..."
+            GUI.ErrorMessage("No Video Files to Copy, quit ...")
+            del GUI
+            exit()
+        Files = []
+        for f in filesa:
+            Files.append("\'%s\'"%f)
+        Files = "|".join(Files)
+        Files = "\"" + Files + "\""
+
+#select destination
+Folders, DestinationFolder=GUI.LookupDestination() 
+if (Folders > 1) or Testing:
+    ManualDest = True
+    if not DestinationFolder:
+        print "No Destination Folder Selected, quit ..."
+        GUI.ErrorMessage("No Destination Folder Selected, quit ...")
+        del GUI
+        exit()
+    DestinationFolder = "\"%s\""%DestinationFolder
+else:
+    ManualDest = False
+
+FileName = GetFileName(SourceFolder, False)
+
+# Build arguments
+SourceFolder = "\"%s\""%SourceFolder
+Arguments = ",".join(["[\"-l\"","\"-s\"",SourceFolder])
+if ManualFiles:
+    Arguments = ",".join([Arguments,"\"-f\"",Files])
+if ManualDest:
+    Arguments = ",".join([Arguments,"\"-d\"",DestinationFolder])
+Arguments += "]"
+
+SockComm = SocketChannel(int(GetSetting("socket_port")))
+
+#json call Moviecopy
+JsonRPC(url,JSONEXECADDON%Arguments)
+print "MovieCopy Started ..."
+
+#print progress
+percentage=0
+PBRun = True
+CopyRun = True
+StartTimeout = WAIT_FOR_START
+Message="Time: %s - ETA: %s - Rate: %s MB/s [%s%%]"
+PBCallback = GUI.Progress(title="Kodi Movie Copy [%s]"%FileName, text=Message % ("0s","Inf","0.0","0"), percentage=0, auto_close=True)
+while (percentage<100) and PBRun and CopyRun:
+    status, data = SockComm.ReadProgress()
+    if status == STATUS_WAITINGSTART:
+        if StartTimeout < 1:
+            CopyRun = False
+        StartTimeout -= 1
+        time.sleep(1)
+    elif status == STATUS_COPYING:
+        StartTimeout = WAIT_FOR_START
+        try:
+            percentage=int(data[3].strip())
+            PBRun=PBCallback(percentage, Message % (data[0].strip(),data[1].strip(),data[2].strip(),data[3].strip()))
+        except:
+            print "*",
+    else: # status == STATUS_FINISHED:
+        CopyRun = False
+
+PBCallback(100,"", True) # close the progress bar
+if StartTimeout < 1:
+    print "Timeout waiting for copy to start, quit ..."
+    GUI.ErrorMessage("Timeout waiting for copy to start, quit ...")
+    SockComm.Close()
+    del GUI
+    exit()
+
+if not PBRun:
+    print "MovieCopy OS Access canceled, but actual copy process will continue"
+    GUI.InfoMessage("MovieCopy OS Access canceled, but actual copy process will continue")
+    SockComm.Close()
+    del GUI
+    exit()
+
+print "MovieCopy Ready ..."
+print "Normal exit"
+SockComm.Close()
+del GUI

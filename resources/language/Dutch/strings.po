@@ -144,3 +144,6 @@ msgctxt "#50115"
 msgid "Minimum Average Timeout Datarate [MB/s] (0=no timeout)"
 msgstr "Minimum Gemiddelde Timeout Snelheid [MB/s] (0=geen timeout)"
 
+msgctxt "#50116"
+msgid "Socket return channel port"
+msgstr "Socket poort voor retour kanaal"

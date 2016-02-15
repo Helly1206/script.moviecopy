@@ -6,6 +6,7 @@ from xbmc import getCondVisibility as condition, translatePath as translate, log
 from subprocess import PIPE, Popen
 import multiprocessing
 import shutil
+import socket
 
 __scriptdebug__ = False
 __guitest__ = False
@@ -17,7 +18,7 @@ __cwd__        = __addon__.getAddonInfo('path').decode("utf-8")
 __version__    = __addon__.getAddonInfo('version')
 __language__   = __addon__.getLocalizedString
 __datapath__ = xbmc.translatePath(os.path.join('special://temp/', __addonid__))
-__logfile__ = os.path.join(__datapath__, __addonid__ + '.log')
+#__logfile__ = os.path.join(__datapath__, __addonid__ + '.log')
 __LS__ = __addon__.getLocalizedString
 
 # Globals needed for writeLog()
@@ -47,6 +48,8 @@ __move_files__ = True if __addon__.getSetting('move_files').upper() == 'TRUE' el
 __remove_source__ = True if __addon__.getSetting('remove_source').upper() == 'TRUE' else False
 __timeout_rate__ = int(__addon__.getSetting('timeout_rate'))
 
+__socket_port__ = int(__addon__.getSetting('socket_port'))
+
 __video_extensions__ = xbmc.getSupportedMedia('video')
 __video_extensions2__ = __video_extensions__.decode('utf-8').split('|')
 __subs_extensions__ = ".srt|.idx|.sub|.smi|.ssa"
@@ -58,6 +61,9 @@ DLG_TYPE_FILE = 1
 PB_BUSY = 0
 PB_CANCELED = 1
 PB_TIMEOUT = 2
+
+SOCKET_TIMEOUT = 5000 #ms
+TESTING = False
 
 ####################################### GLOBAL FUNCTIONS #####################################
 
@@ -140,6 +146,27 @@ def GUI_LookupDestination():
 
     return DestinationFolder
 
+def OpenSocket():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(('localhost', __socket_port__))
+        s.settimeout(SOCKET_TIMEOUT/1000)
+    except Exception, e:
+        writeLog("[Remote] Error socket connection: %s"%e)
+        s = None
+    return s
+    
+def SocketSend(s,msg):
+    if s == None: return
+    try:
+        s.send(msg)
+    except socket.error, e:
+        writeLog("[Remote] Error socket connection: %s"%e)
+    return msg
+    
+def CloseSocket(s):
+    if s == None: return
+    s.close()   
 
 ####################################### MOVIECOPY FUNCTIONS #####################################
 
@@ -208,7 +235,7 @@ class CopyFiles(object):
 class CopyProgressBar(object):
     def __init__(self, MovieName="", log=False):
         self.log = log
-        self.f = None
+        self.s = None
         self.header = __LS__(50005) % (MovieName)
         self.message = __LS__(50006)
         self.time = 0
@@ -248,8 +275,7 @@ class CopyProgressBar(object):
             self.timeout = size/(__timeout_rate__*1024*1024)
         writeDebug("Copy Timeout: %d s" % (self.timeout))
         if self.log:
-            if not os.path.exists(__datapath__): os.makedirs(__datapath__)
-            self.f = open(__logfile__, 'w')
+            self.s = OpenSocket()
 
         if self.size > 0:
             self.pb.create(self.header,self.message % (self.GetTime(self.time),self.GetETA(0),self.GetRate(0),str(self.percent)))
@@ -261,17 +287,16 @@ class CopyProgressBar(object):
     def Update(self, done):
         retval = PB_BUSY
         if not __background_copy__:
-	    if self.pb.iscanceled():
+            if self.pb.iscanceled():
                retval = PB_CANCELED
-	if self.timeout > 0 and self.time > self.timeout:
+        if self.timeout > 0 and self.time > self.timeout:
             retval = PB_TIMEOUT
         if retval == PB_BUSY:
             self.percent = int(done * 100 / self.size)
             self.pb.update(self.percent, self.header, self.message % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
             writeDebug(self.message % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
             if self.log:
-                self.f.write('%s, %s, %s, %s\n' % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
-                self.f.flush()
+                SocketSend(self.s,"%s, %s, %s, %s\n" % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
         return retval
 
     def Wait(self):
@@ -287,8 +312,8 @@ class CopyProgressBar(object):
     def Close(self):
         self.pb.close()
         if self.log:
-            self.f.write('Finished\n')
-            self.f.close()
+            SocketSend(self.s,'Finished\n')
+            CloseSocket(self.s)
 
 # FileInfo
 class FileInfo(object):
@@ -505,13 +530,16 @@ else:
         Size = fi.GetFolderSize(SourceFolder)
         Files = []
     else:
-        if __manual_files__:
-            Files = fi.BuildFilesList(SourceFolder)
-        if Files == []:
-            notifyOSD(__addonname__,__LS__(50010),__IconError__);
-            writeLog("No Video Files to Copy, quit ...", xbmc.LOGERROR)
+        if not TESTING:
+            if __manual_files__:
+                Files = fi.BuildFilesList(SourceFolder)
+            if Files == []:
+                notifyOSD(__addonname__,__LS__(50010),__IconError__);
+                writeLog("No Video Files to Copy, quit ...", xbmc.LOGERROR)
+            else:
+                Size = fi.GetFilesSize(SourceFolder,Files)
         else:
-            Size = fi.GetFilesSize(SourceFolder,Files)
+            Size = 100
 
 if Size > 0: 
     if __manual_destination__:
@@ -532,20 +560,27 @@ if Size > 0:
     if fi.CheckDestination(CopyDestination) and not __guitest__:
         # Create progress bar
         cpb = CopyProgressBar(fi.GetFileName(SourceFolder,False),__log_progress__)       
-        pbStatus = cpb.Create(Size)
 
         # Start copy process
-        if (pbStatus == PB_BUSY):
-            cf = CopyFiles()
-            cf.StartCopy(SourceFolder, CopyDestination, Files)
+        if not TESTING:
+            pbStatus = cpb.Create(Size)
+            if (pbStatus == PB_BUSY):
+                cf = CopyFiles()
+                cf.StartCopy(SourceFolder, CopyDestination, Files)
 
-            while cf.BusyCopy() and (pbStatus == PB_BUSY) and not xbmc.abortRequested:
-                pbStatus = cpb.UpdateAndWait(fi.GetFolderSize(CopyDestination))
+                while cf.BusyCopy() and (pbStatus == PB_BUSY) and not xbmc.abortRequested:
+                    pbStatus = cpb.UpdateAndWait(fi.GetFolderSize(CopyDestination))
 
-            if cf.BusyCopy():
-                writeLog("Killing copy process...", xbmc.LOGERROR)
-                cf.KillCopy(True)
-            del cf
+                if cf.BusyCopy():
+                    writeLog("Killing copy process...", xbmc.LOGERROR)
+                    cf.KillCopy(True)
+                del cf
+        else: # Test copy
+            pbStatus = cpb.Create(100)
+            pgs=0
+            while (pgs<100) and (pbStatus == PB_BUSY) and not xbmc.abortRequested:
+                pgs+=3
+                pbStatus = cpb.UpdateAndWait(pgs)
 
         cpb.Close()
         del cpb
