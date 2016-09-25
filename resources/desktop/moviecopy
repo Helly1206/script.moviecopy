@@ -381,7 +381,7 @@ class SocketChannel(object):
                 cnt = 10
             
         if line:
-            if line.lower() == "finished":
+            if "finished" in line.lower():
                 status = STATUS_FINISHED
             else:
                 status = STATUS_COPYING
@@ -405,8 +405,8 @@ print "Moviecopy OS Access GUI V2.0"
 
 gettext.install("MovieCopyGui") # replace with the appropriate catalog name
 
-app = wx.PySimpleApp(0)
-wx.InitAllImageHandlers()
+app = wx.App(False)
+#wx.InitAllImageHandlers()
 
 GUI = WXGUI()
 
@@ -510,8 +510,8 @@ while (percentage<100) and PBRun and CopyRun:
 
 PBCallback(100,"", True) # close the progress bar
 if StartTimeout < 1:
-    print "Timeout waiting for copy to start, quit ..."
-    GUI.ErrorMessage("Timeout waiting for copy to start, quit ...")
+    print "Timeout waiting for copy to start or connection error, quit ..."
+    GUI.ErrorMessage("Timeout waiting for copy to start or connection error, quit ...")
     SockComm.Close()
     del GUI
     exit()

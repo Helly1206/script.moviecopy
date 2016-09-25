@@ -163,6 +163,17 @@ def SocketSend(s,msg):
     except socket.error, e:
         writeLog("[Remote] Error socket connection: %s"%e)
     return msg
+
+def SocketWaitRdy(s):
+    buf = ""
+    
+    try:
+        buf = s.recv(63)
+    except socket.timeout:
+        writeLog("[Remote] Error socket connection: Timeout")
+    except socket.error, e:
+        writeLog("[Remote] Error socket connection: %s"%e)
+    return (buf=="RDY")
     
 def CloseSocket(s):
     if s == None: return
