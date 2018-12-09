@@ -1,3 +1,7 @@
+from __future__ import division
+from builtins import str
+from builtins import object
+from past.utils import old_div
 import os
 import xbmc
 import xbmcaddon
@@ -150,8 +154,8 @@ def OpenSocket():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect(('localhost', __socket_port__))
-        s.settimeout(SOCKET_TIMEOUT/1000)
-    except Exception, e:
+        s.settimeout(old_div(SOCKET_TIMEOUT,1000))
+    except Exception as e:
         writeLog("[Remote] Error socket connection: %s"%e)
         s = None
     return s
@@ -160,7 +164,7 @@ def SocketSend(s,msg):
     if s == None: return
     try:
         s.send(msg)
-    except socket.error, e:
+    except socket.error as e:
         writeLog("[Remote] Error socket connection: %s"%e)
     return msg
 
@@ -171,7 +175,7 @@ def SocketWaitRdy(s):
         buf = s.recv(63)
     except socket.timeout:
         writeLog("[Remote] Error socket connection: Timeout")
-    except socket.error, e:
+    except socket.error as e:
         writeLog("[Remote] Error socket connection: %s"%e)
     return (buf=="RDY")
     
@@ -197,7 +201,7 @@ class CopyFiles(object):
                 os.renames(source, destination)
             else:
                 shutil.copytree(source, destination)
-        except IOError, e:
+        except IOError as e:
             notifyOSD(__addonname__,__LS__(50002) % e,__IconError__);
         return 0
 
@@ -208,14 +212,14 @@ class CopyFiles(object):
                     shutil.move(f, destination)
                 else:
                     shutil.copy(f, destination)
-        except IOError, e:
+        except IOError as e:
             notifyOSD(__addonname__,__LS__(50003) % e,__IconError__);
         return 0
 
     def RemoveFolder(self, source):
         try:
             shutil.rmtree(source)
-        except IOError, e:
+        except IOError as e:
             notifyOSD(__addonname__,__LS__(50004) % e,__IconError__);
         return 0
 
@@ -263,7 +267,7 @@ class CopyProgressBar(object):
         if (time < 60):
             rettime = ("%ds" % (time))
         else:
-            rettime = ("%d:%02d" % (time/60,time%60))
+            rettime = ("%d:%02d" % (old_div(time,60),time%60))
         return rettime
 
     def GetRate(self, done): 
@@ -276,14 +280,14 @@ class CopyProgressBar(object):
             return "Inf"
         else:
             rate = float(done)/float(self.time)
-            timetbd = (self.size/rate) - self.time
+            timetbd = (old_div(self.size,rate)) - self.time
         return self.GetTime(timetbd)
 
     def Create(self, size):
         retval = PB_BUSY
         self.size = size
         if __timeout_rate__ > 0:
-            self.timeout = size/(__timeout_rate__*1024*1024)
+            self.timeout = old_div(size,(__timeout_rate__*1024*1024))
         writeDebug("Copy Timeout: %d s" % (self.timeout))
         if self.log:
             self.s = OpenSocket()
@@ -303,7 +307,7 @@ class CopyProgressBar(object):
         if self.timeout > 0 and self.time > self.timeout:
             retval = PB_TIMEOUT
         if retval == PB_BUSY:
-            self.percent = int(done * 100 / self.size)
+            self.percent = int(old_div(done * 100, self.size))
             self.pb.update(self.percent, self.header, self.message % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
             writeDebug(self.message % (self.GetTime(self.time),self.GetETA(done),self.GetRate(done),str(self.percent)))
             if self.log:

@@ -1,6 +1,9 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 #imports
+from builtins import bytes
+from builtins import str
+from builtins import object
 import os, subprocess
 import json
 from xml.dom import minidom
@@ -14,15 +17,15 @@ if sys.version_info.major == 3:
     from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
     from urllib.parse import urlencode
 else:
-    from urllib2 import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
-    from urllib import urlencode
+    from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
+    from urllib.parse import urlencode
     
 try:
     import wx
 except ImportError:
-    print "wxpython not installed, wxpython is required to use this GUI"
-    print "Install wxpython"
-    print "See: http://www.wxpython.org/download.php"
+    print("wxpython not installed, wxpython is required to use this GUI")
+    print("Install wxpython")
+    print("See: http://www.wxpython.org/download.php")
     exit()
 
 #defines
@@ -214,7 +217,7 @@ def GetSetting(search):
 
 def GetSettingsFromKodi(path):
     if not os.path.isfile(path):
-        print "Settingsfile does not exist: %s" % (path)
+        print("Settingsfile does not exist: %s" % (path))
         dlg = wx.MessageDialog(None, 
                 "Settingsfile does not exist: %s" % (path),
                 "Settings error", wx.OK|wx.ICON_ERROR)
@@ -232,8 +235,8 @@ def GetSettingsFromKodi(path):
                 asettings=node.getElementsByTagName('setting')
                 for a in asettings:
                     settings.append([a.getAttribute("id"),a.getAttribute("value")])
-    except Exception, e:
-        print "Error reading from settingsfile: %s" % (path)
+    except Exception as e:
+        print("Error reading from settingsfile: %s" % (path))
         dlg = wx.MessageDialog(None, 
                 "Settingsfile does not exist: %s" % (path),
                 "Settings error", wx.OK|wx.ICON_ERROR)
@@ -260,7 +263,7 @@ def GetDataFolder():
     
 def GetUrlFromKodi(path):
     if not os.path.isfile(path):
-        print "Settingsfile does not exist: %s" % (path)
+        print("Settingsfile does not exist: %s" % (path))
         dlg = wx.MessageDialog(None, 
                 "Settingsfile does not exist: %s" % (path),
                 "Settings error", wx.OK|wx.ICON_ERROR)
@@ -282,8 +285,8 @@ def GetUrlFromKodi(path):
                         port=wsp[0].childNodes[0].data
                     else:
                         port=8080
-    except Exception, e:
-        print "Error reading from settingsfile: %s" % (path)
+    except Exception as e:
+        print("Error reading from settingsfile: %s" % (path))
         dlg = wx.MessageDialog(None, 
                 "Settingsfile does not exist: %s" % (path),
                 "Settings error", wx.OK|wx.ICON_ERROR)
@@ -333,7 +336,7 @@ class SocketChannel(object):
                 self.Counter = 0
                 print("[Remote] Socket connection established to: %s"%str(sockname))
                 Success = True
-            except socket.error, e:
+            except socket.error as e:
                 #print("[Remote] Error socket connection: %s"%e)
                 if self.ss != None:
                     self.ss.close()
@@ -347,7 +350,7 @@ class SocketChannel(object):
             msg = self.ss.recv(100)
         except socket.timeout:
             msg = None
-        except socket.error, e:
+        except socket.error as e:
             msg = None
             print("[Remote] Error socket connection: %s"%e)
             if self.ss != None:
@@ -387,8 +390,8 @@ class SocketChannel(object):
                 status = STATUS_COPYING
                 try:
                     data = line.split(',')
-                except Exception, e:
-                    print "Incorrect log line"
+                except Exception as e:
+                    print("Incorrect log line")
                     
         return status, data
     
@@ -401,7 +404,7 @@ class SocketChannel(object):
 #########################################################
 ### 
 Testing = False
-print "Moviecopy OS Access GUI V2.0"
+print("Moviecopy OS Access GUI V2.0")
 
 gettext.install("MovieCopyGui") # replace with the appropriate catalog name
 
@@ -411,7 +414,7 @@ app = wx.App(False)
 GUI = WXGUI()
 
 if not getProcessPID('kodi.bin'):
-    print "Kodi not running, copying movies not possible"
+    print("Kodi not running, copying movies not possible")
     GUI.ErrorMessage("Kodi not running, copying movies not possible")
     del GUI
     exit()
@@ -432,7 +435,7 @@ GetSettingsFromKodi(settingspath)
 #select source folder
 SourceFolder = GUI.SelectSourceFolder(GetSetting("src_folder"))
 if not SourceFolder:
-    print "No Source Folder Selected, quit ..."
+    print("No Source Folder Selected, quit ...")
     GUI.ErrorMessage("No Source Folder Selected, quit ...")
     del GUI
     exit()
@@ -444,7 +447,7 @@ if not GetSetting("entire_folder").lower() == "true" or Testing:
         ManualFiles = True
         filesa = GUI.GetFiles(SourceFolder)
         if not filesa:
-            print "No Video Files to Copy, quit ..."
+            print("No Video Files to Copy, quit ...")
             GUI.ErrorMessage("No Video Files to Copy, quit ...")
             del GUI
             exit()
@@ -459,7 +462,7 @@ Folders, DestinationFolder=GUI.LookupDestination()
 if (Folders > 1) or Testing:
     ManualDest = True
     if not DestinationFolder:
-        print "No Destination Folder Selected, quit ..."
+        print("No Destination Folder Selected, quit ...")
         GUI.ErrorMessage("No Destination Folder Selected, quit ...")
         del GUI
         exit()
@@ -482,7 +485,7 @@ SockComm = SocketChannel(int(GetSetting("socket_port")))
 
 #json call Moviecopy
 JsonRPC(url,JSONEXECADDON%Arguments)
-print "MovieCopy Started ..."
+print("MovieCopy Started ...")
 
 #print progress
 percentage=0
@@ -504,26 +507,26 @@ while (percentage<100) and PBRun and CopyRun:
             percentage=int(data[3].strip())
             PBRun=PBCallback(percentage, Message % (data[0].strip(),data[1].strip(),data[2].strip(),data[3].strip()))
         except:
-            print "*",
+            print("*", end=' ')
     else: # status == STATUS_FINISHED:
         CopyRun = False
 
 PBCallback(100,"", True) # close the progress bar
 if StartTimeout < 1:
-    print "Timeout waiting for copy to start or connection error, quit ..."
+    print("Timeout waiting for copy to start or connection error, quit ...")
     GUI.ErrorMessage("Timeout waiting for copy to start or connection error, quit ...")
     SockComm.Close()
     del GUI
     exit()
 
 if not PBRun:
-    print "MovieCopy OS Access canceled, but actual copy process will continue"
+    print("MovieCopy OS Access canceled, but actual copy process will continue")
     GUI.InfoMessage("MovieCopy OS Access canceled, but actual copy process will continue")
     SockComm.Close()
     del GUI
     exit()
 
-print "MovieCopy Ready ..."
-print "Normal exit"
+print("MovieCopy Ready ...")
+print("Normal exit")
 SockComm.Close()
 del GUI
