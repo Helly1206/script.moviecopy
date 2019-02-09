@@ -1,9 +1,6 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 
 #imports
-from builtins import bytes
-from builtins import str
-from builtins import object
 import os, subprocess
 import json
 from xml.dom import minidom
@@ -17,8 +14,8 @@ if sys.version_info.major == 3:
     from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
     from urllib.parse import urlencode
 else:
-    from urllib.request import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
-    from urllib.parse import urlencode
+    from urllib2 import HTTPPasswordMgrWithDefaultRealm, HTTPBasicAuthHandler, Request, build_opener
+    from urllib import urlencode
     
 try:
     import wx
@@ -234,7 +231,10 @@ def GetSettingsFromKodi(path):
             for node in nodes:
                 asettings=node.getElementsByTagName('setting')
                 for a in asettings:
-                    settings.append([a.getAttribute("id"),a.getAttribute("value")])
+                    value=""
+                    if (len(a.childNodes) > 0):
+                        value=a.childNodes[0].data
+                    settings.append([a.getAttribute("id"),value])
     except Exception as e:
         print("Error reading from settingsfile: %s" % (path))
         dlg = wx.MessageDialog(None, 
@@ -273,18 +273,18 @@ def GetUrlFromKodi(path):
     
     global settings
     settings = []
+    port=8080
     try:
         __xml = minidom.parse(path)
         nodes = __xml.getElementsByTagName("settings")
         if nodes:
             for node in nodes:
-                asettings=node.getElementsByTagName('services')
-                for a in asettings:
-                    wsp=node.getElementsByTagName('webserverport')
-                    if (len(wsp[0].childNodes) > 0):
-                        port=wsp[0].childNodes[0].data
-                    else:
-                        port=8080
+                nds=node.getElementsByTagName("setting")
+                # if notelist[i].getAttribute("id") == id:
+                for nd in nds:
+                    if nd.getAttribute("id") == "services.webserverport":
+                        if (len(nd.childNodes) > 0):
+                            port=nd.childNodes[0].data
     except Exception as e:
         print("Error reading from settingsfile: %s" % (path))
         dlg = wx.MessageDialog(None, 
@@ -296,9 +296,9 @@ def GetUrlFromKodi(path):
     return 'http://127.0.0.1:%s/jsonrpc'%port
 
 def getProcessPID(process):
-    _syscmd = subprocess.Popen(['pidof', process], stdout=subprocess.PIPE)
+    _syscmd = subprocess.Popen(['pgrep', process], stdout=subprocess.PIPE)
     PID = _syscmd.stdout.read().strip()
-    return PID if PID > 0 else False
+    return PID if PID else False
 
 def GetFileName(filename, slash=True):
     if filename[-1:] == "/":
@@ -413,7 +413,7 @@ app = wx.App(False)
 
 GUI = WXGUI()
 
-if not getProcessPID('kodi.bin'):
+if not getProcessPID('kodi'):
     print("Kodi not running, copying movies not possible")
     GUI.ErrorMessage("Kodi not running, copying movies not possible")
     del GUI
@@ -507,7 +507,7 @@ while (percentage<100) and PBRun and CopyRun:
             percentage=int(data[3].strip())
             PBRun=PBCallback(percentage, Message % (data[0].strip(),data[1].strip(),data[2].strip(),data[3].strip()))
         except:
-            print("*", end=' ')
+            print("*")
     else: # status == STATUS_FINISHED:
         CopyRun = False
 
