@@ -2,9 +2,10 @@ import os
 import xbmc
 import xbmcaddon
 import xbmcgui
+import xbmcvfs
 from xbmc import getCondVisibility as condition, translatePath as translate, log as xbmc_log
 from subprocess import PIPE, Popen
-import multiprocessing
+import threading
 import shutil
 import socket
 
@@ -14,10 +15,10 @@ __guitest__ = False
 __addon__      = xbmcaddon.Addon()
 __addonname__  = __addon__.getAddonInfo('name')
 __addonid__    = __addon__.getAddonInfo('id')
-__cwd__        = __addon__.getAddonInfo('path').decode("utf-8")
+__cwd__        = __addon__.getAddonInfo('path') #.decode("utf-8")
 __version__    = __addon__.getAddonInfo('version')
 __language__   = __addon__.getLocalizedString
-__datapath__ = xbmc.translatePath(os.path.join('special://temp/', __addonid__))
+__datapath__ = xbmcvfs.translatePath(os.path.join('special://temp/', __addonid__))
 #__logfile__ = os.path.join(__datapath__, __addonid__ + '.log')
 __LS__ = __addon__.getLocalizedString
 
@@ -29,9 +30,9 @@ MSGCOUNT = 0
 #path and icons
 __path__ = __addon__.getAddonInfo('path')
 
-__IconStop__ = xbmc.translatePath(os.path.join( __path__,'resources', 'media', 'stop.png'))
-__IconError__ = xbmc.translatePath(os.path.join( __path__,'resources', 'media', 'error.png'))
-__IconMovieRoll__ = xbmc.translatePath(os.path.join( __path__,'resources', 'media', 'movieroll.png'))
+__IconStop__ = xbmcvfs.translatePath(os.path.join( __path__,'resources', 'media', 'stop.png'))
+__IconError__ = xbmcvfs.translatePath(os.path.join( __path__,'resources', 'media', 'error.png'))
+__IconMovieRoll__ = xbmcvfs.translatePath(os.path.join( __path__,'resources', 'media', 'movieroll.png'))
 
 #Load all settings
 __src_folder__ = __addon__.getSetting('src_folder') #"/mnt/htpc_disk/test/" 
@@ -51,9 +52,9 @@ __timeout_rate__ = int(__addon__.getSetting('timeout_rate'))
 __socket_port__ = int(__addon__.getSetting('socket_port'))
 
 __video_extensions__ = xbmc.getSupportedMedia('video')
-__video_extensions2__ = __video_extensions__.decode('utf-8').split('|')
+__video_extensions2__ = __video_extensions__.split("|") #decode('utf-8').split('|')
 __subs_extensions__ = ".srt|.idx|.sub|.smi|.ssa"
-__subs_extensions2__ = __subs_extensions__.decode('utf-8').split('|')
+__subs_extensions2__ = __subs_extensions__.split("|") #decode('utf-8').split('|')
 
 DLG_TYPE_FOLDER = 0
 DLG_TYPE_FILE = 1
@@ -68,13 +69,13 @@ TESTING = False
 ####################################### GLOBAL FUNCTIONS #####################################
 
 def notifyOSD(header, message, icon):
-    xbmc.executebuiltin('XBMC.Notification(%s,%s,5000,%s)' % (header.encode('utf-8'), message.encode('utf-8'), icon))
+    xbmc.executebuiltin('XBMC.Notification(%s,%s,5000,%s)' % (header, message, icon))
 
-def writeDebug(message, level=xbmc.LOGNOTICE):
+def writeDebug(message, level=xbmc.LOGINFO):
     if __scriptdebug__ == True:
         writeLog("[Debug] %s" % message, level)
 
-def writeLog(message, level=xbmc.LOGNOTICE):
+def writeLog(message, level=xbmc.LOGINFO):
     global LASTMSG, MSGCOUNT
     if LASTMSG == message:
         MSGCOUNT = MSGCOUNT + 1
@@ -82,7 +83,7 @@ def writeLog(message, level=xbmc.LOGNOTICE):
     else:
         LASTMSG = message
         MSGCOUNT = 0
-        xbmc.log('%s: %s' % (__addonid__, message.encode('utf-8')), level)  
+        xbmc.log('%s: %s' % (__addonid__, message), level)  #.encode('utf-8')
 
 def GUI_Browse(title, defaultPath=None, dialogType=DLG_TYPE_FILE, mask=''):
         """
@@ -103,7 +104,7 @@ def GUI_Browse(title, defaultPath=None, dialogType=DLG_TYPE_FILE, mask=''):
 
         """
         if defaultPath is None:
-            defaultPath = xbmc.translatePath("special://home")
+            defaultPath = xbmcvfs.translatePath("special://home")
 
         browseDialog = xbmcgui.Dialog()
         destFolder = browseDialog.browse(dialogType, title, 'programs', mask, True, True, defaultPath)
@@ -159,7 +160,7 @@ def OpenSocket():
 def SocketSend(s,msg):
     if s == None: return
     try:
-        s.send(msg)
+        s.send(msg.encode("utf-8"))
     except socket.error as e:
         writeLog("[Remote] Error socket connection: %s"%e)
     return msg
@@ -168,7 +169,7 @@ def SocketWaitRdy(s):
     buf = ""
     
     try:
-        buf = s.recv(63)
+        buf = s.recv(63).decode("utf-8")
     except socket.timeout:
         writeLog("[Remote] Error socket connection: Timeout")
     except socket.error as e:
@@ -228,10 +229,10 @@ class CopyFiles(object):
             self.CopyFiles(files, destination)
         if __remove_source__ == True:
             writeDebug("Remove Source: %s" % source)
-            self.RemoveFolder(source)            
+            self.RemoveFolder(source)         
 
     def StartCopy(self, source, destination, files):
-        self.p = multiprocessing.Process(target=self.proc_copy, args=(source, destination, files))
+        self.p = threading.Thread(target=self.proc_copy, args=(source, destination, files))
         self.p.start()
 
     def BusyCopy(self):
@@ -239,7 +240,7 @@ class CopyFiles(object):
 
     def KillCopy(self,wait):
         #hope we'll never need it, not a very nice solution
-        cmdline('kill -9 %s'%(format(self.p.pid)))
+        #cmdline('kill -9 %s'%(format(self.p.pid)))
         if wait: self.p.join()
 
 #CopyProgress
@@ -579,7 +580,7 @@ if Size > 0:
                 cf = CopyFiles()
                 cf.StartCopy(SourceFolder, CopyDestination, Files)
 
-                while cf.BusyCopy() and (pbStatus == PB_BUSY) and not xbmc.abortRequested:
+                while cf.BusyCopy() and (pbStatus == PB_BUSY) and not xbmc.Monitor().abortRequested():
                     pbStatus = cpb.UpdateAndWait(fi.GetFolderSize(CopyDestination))
 
                 if cf.BusyCopy():
@@ -589,7 +590,7 @@ if Size > 0:
         else: # Test copy
             pbStatus = cpb.Create(100)
             pgs=0
-            while (pgs<100) and (pbStatus == PB_BUSY) and not xbmc.abortRequested:
+            while (pgs<100) and (pbStatus == PB_BUSY) and not xbmc.Monitor().abortRequested():
                 pgs+=3
                 pbStatus = cpb.UpdateAndWait(pgs)
 
@@ -606,4 +607,5 @@ if Size > 0:
     del fi
 
 writeLog("MovieCopy Ready ...")
+
 

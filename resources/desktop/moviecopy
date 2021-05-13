@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 #imports
 import os, subprocess
@@ -347,7 +347,7 @@ class SocketChannel(object):
     def Receive(self):
         msg = None
         try: 
-            msg = self.ss.recv(100)
+            msg = self.ss.recv(100).decode("utf-8")
         except socket.timeout:
             msg = None
         except socket.error as e:
@@ -427,8 +427,9 @@ url = GetUrlFromKodi(loc)
 path = json.loads(JsonRPC(url,JSONGETPATH))['result']['addon']['path']
 base,ext = os.path.split(path)
 basepath,ext2 = os.path.split(base)
-base = os.path.join(basepath,"userdata/addon_data")
-settingspath = os.path.join(os.path.join(base,ext),"settings.xml")
+basepath2,ext3 = os.path.split(basepath)
+base = os.path.join(basepath2,"userdata/addon_data")
+settingspath = os.path.join(os.path.join(base,ext2),"settings.xml")
 #get settings
 GetSettingsFromKodi(settingspath)
 
